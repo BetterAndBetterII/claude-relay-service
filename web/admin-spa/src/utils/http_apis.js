@@ -181,6 +181,8 @@ export const generateOpenAIAuthUrlApi = (data) =>
   request({ url: '/admin/openai-accounts/generate-auth-url', method: 'POST', data })
 export const exchangeOpenAICodeApi = (data) =>
   request({ url: '/admin/openai-accounts/exchange-code', method: 'POST', data })
+export const refreshOpenAICodexUsageApi = (id) =>
+  request({ url: `/admin/openai-accounts/${id}/codex-usage/refresh`, method: 'POST' })
 
 // OpenAI Responses 账户
 export const getOpenAIResponsesAccountsApi = () =>

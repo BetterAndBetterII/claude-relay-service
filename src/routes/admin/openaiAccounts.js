@@ -787,6 +787,25 @@ router.post('/:accountId/reset-status', authenticateAdmin, async (req, res) => {
   }
 })
 
+// 刷新 Codex usage 快照（含主动重置次数）
+router.post('/:accountId/codex-usage/refresh', authenticateAdmin, async (req, res) => {
+  try {
+    const { accountId } = req.params
+
+    const codexUsage = await openaiAccountService.refreshCodexUsageSnapshot(accountId)
+
+    logger.success(`Admin refreshed Codex usage for OpenAI account: ${accountId}`)
+    return res.json({ success: true, data: codexUsage })
+  } catch (error) {
+    logger.error('❌ Failed to refresh OpenAI Codex usage:', error)
+    return res.status(error.status || 500).json({
+      success: false,
+      error: 'Failed to refresh Codex usage',
+      message: error.message
+    })
+  }
+})
+
 // 切换 OpenAI 账户调度状态
 router.put('/:accountId/toggle-schedulable', authenticateAdmin, async (req, res) => {
   try {

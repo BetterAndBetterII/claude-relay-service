@@ -24,6 +24,11 @@ const { encrypt, decrypt } = encryptor
 const OPENAI_ACCOUNT_KEY_PREFIX = 'openai:account:'
 const SHARED_OPENAI_ACCOUNTS_KEY = 'shared_openai_accounts'
 const ACCOUNT_SESSION_MAPPING_PREFIX = 'openai_session_account_mapping:'
+const CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
+const CODEX_USAGE_HEADERS = {
+  'Content-Type': 'application/json',
+  'User-Agent': 'codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal'
+}
 
 // 🧹 定期清理缓存（每10分钟）
 setInterval(
@@ -41,6 +46,110 @@ function toNumberOrNull(value) {
 
   const num = Number(value)
   return Number.isFinite(num) ? num : null
+}
+
+function normalizeNumberValue(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return null
+    }
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
+}
+
+function parseCodexUsagePayload(payload) {
+  if (payload === undefined || payload === null) {
+    return null
+  }
+
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim()
+    if (!trimmed) {
+      return null
+    }
+
+    try {
+      return JSON.parse(trimmed)
+    } catch (error) {
+      return null
+    }
+  }
+
+  if (typeof payload === 'object') {
+    return payload
+  }
+
+  return null
+}
+
+function extractCodexRateLimitResetCreditsAvailableCount(payload) {
+  const usagePayload = parseCodexUsagePayload(payload)
+  if (!usagePayload) {
+    return null
+  }
+
+  const resetCredits =
+    usagePayload.rate_limit_reset_credits || usagePayload.rateLimitResetCredits || null
+
+  return normalizeNumberValue(resetCredits?.available_count ?? resetCredits?.availableCount)
+}
+
+function extractCodexWindowSnapshot(windowPayload) {
+  if (!windowPayload || typeof windowPayload !== 'object') {
+    return null
+  }
+
+  const snapshot = {
+    usedPercent: normalizeNumberValue(windowPayload.used_percent ?? windowPayload.usedPercent),
+    resetAfterSeconds: normalizeNumberValue(
+      windowPayload.reset_after_seconds ?? windowPayload.resetAfterSeconds
+    ),
+    windowMinutes: normalizeNumberValue(windowPayload.window_minutes ?? windowPayload.windowMinutes)
+  }
+
+  return Object.values(snapshot).some((value) => value !== null) ? snapshot : null
+}
+
+function extractCodexUsageSnapshotFromPayload(payload) {
+  const usagePayload = parseCodexUsagePayload(payload)
+  if (!usagePayload) {
+    return null
+  }
+
+  const rateLimit = usagePayload.rate_limit || usagePayload.rateLimit || null
+  const codeReviewRateLimit =
+    usagePayload.code_review_rate_limit || usagePayload.codeReviewRateLimit || null
+  const primary = extractCodexWindowSnapshot(rateLimit)
+  const secondary = extractCodexWindowSnapshot(codeReviewRateLimit)
+  const rateLimitResetCreditsAvailableCount =
+    extractCodexRateLimitResetCreditsAvailableCount(usagePayload)
+
+  const snapshot = {
+    rateLimitResetCreditsAvailableCount
+  }
+
+  if (primary) {
+    snapshot.primaryUsedPercent = primary.usedPercent
+    snapshot.primaryResetAfterSeconds = primary.resetAfterSeconds
+    snapshot.primaryWindowMinutes = primary.windowMinutes
+  }
+
+  if (secondary) {
+    snapshot.secondaryUsedPercent = secondary.usedPercent
+    snapshot.secondaryResetAfterSeconds = secondary.resetAfterSeconds
+    snapshot.secondaryWindowMinutes = secondary.windowMinutes
+  }
+
+  const hasData = Object.values(snapshot).some((value) => value !== null && value !== undefined)
+  return hasData ? snapshot : null
 }
 
 function computeResetMeta(updatedAt, resetAfterSeconds) {
@@ -76,6 +185,9 @@ function buildCodexUsageSnapshot(accountData) {
   const secondaryResetAfterSeconds = toNumberOrNull(accountData.codexSecondaryResetAfterSeconds)
   const secondaryWindowMinutes = toNumberOrNull(accountData.codexSecondaryWindowMinutes)
   const overSecondaryPercent = toNumberOrNull(accountData.codexPrimaryOverSecondaryLimitPercent)
+  const rateLimitResetCreditsAvailableCount = toNumberOrNull(
+    accountData.codexRateLimitResetCreditsAvailableCount
+  )
 
   const hasPrimaryData =
     primaryUsedPercent !== null ||
@@ -86,7 +198,12 @@ function buildCodexUsageSnapshot(accountData) {
     secondaryResetAfterSeconds !== null ||
     secondaryWindowMinutes !== null
 
-  if (!updatedAt && !hasPrimaryData && !hasSecondaryData) {
+  if (
+    !updatedAt &&
+    !hasPrimaryData &&
+    !hasSecondaryData &&
+    rateLimitResetCreditsAvailableCount === null
+  ) {
     return null
   }
 
@@ -109,7 +226,8 @@ function buildCodexUsageSnapshot(accountData) {
       resetAt: secondaryMeta.resetAt,
       remainingSeconds: secondaryMeta.remainingSeconds
     },
-    primaryOverSecondaryPercent: overSecondaryPercent
+    primaryOverSecondaryPercent: overSecondaryPercent,
+    rateLimitResetCreditsAvailableCount
   }
 }
 
@@ -746,6 +864,7 @@ async function getAllAccounts() {
       delete accountData.codexSecondaryResetAfterSeconds
       delete accountData.codexSecondaryWindowMinutes
       delete accountData.codexPrimaryOverSecondaryLimitPercent
+      delete accountData.codexRateLimitResetCreditsAvailableCount
       // 时间戳改由 codexUsage.updatedAt 暴露
       delete accountData.codexUsageUpdatedAt
 
@@ -1235,7 +1354,8 @@ async function updateCodexUsageSnapshot(accountId, usageSnapshot) {
     secondaryUsedPercent: 'codexSecondaryUsedPercent',
     secondaryResetAfterSeconds: 'codexSecondaryResetAfterSeconds',
     secondaryWindowMinutes: 'codexSecondaryWindowMinutes',
-    primaryOverSecondaryPercent: 'codexPrimaryOverSecondaryLimitPercent'
+    primaryOverSecondaryPercent: 'codexPrimaryOverSecondaryLimitPercent',
+    rateLimitResetCreditsAvailableCount: 'codexRateLimitResetCreditsAvailableCount'
   }
 
   const updates = {}
@@ -1258,6 +1378,89 @@ async function updateCodexUsageSnapshot(accountId, usageSnapshot) {
   await client.hset(`${OPENAI_ACCOUNT_KEY_PREFIX}${accountId}`, updates)
 }
 
+async function requestCodexUsage(account, accessToken) {
+  const headers = {
+    ...CODEX_USAGE_HEADERS,
+    Authorization: `Bearer ${accessToken}`
+  }
+
+  const chatgptAccountId = account.accountId || account.chatgptUserId
+  if (chatgptAccountId) {
+    headers['Chatgpt-Account-Id'] = chatgptAccountId
+  }
+
+  const requestOptions = {
+    method: 'GET',
+    url: CODEX_USAGE_URL,
+    headers,
+    timeout: config.requestTimeout || 600000,
+    validateStatus: () => true
+  }
+
+  const proxyAgent = ProxyHelper.createProxyAgent(account.proxy)
+  if (proxyAgent) {
+    requestOptions.httpAgent = proxyAgent
+    requestOptions.httpsAgent = proxyAgent
+    requestOptions.proxy = false
+    logger.info(
+      `🌐 Using proxy for OpenAI Codex usage refresh: ${ProxyHelper.getProxyDescription(
+        account.proxy
+      )}`
+    )
+  }
+
+  return axios(requestOptions)
+}
+
+async function refreshCodexUsageSnapshot(accountId) {
+  let account = await getAccount(accountId)
+  if (!account) {
+    throw new Error('Account not found')
+  }
+
+  if (isTokenExpired(account)) {
+    await refreshAccountToken(accountId)
+    account = await getAccount(accountId)
+  }
+
+  let accessToken = account.accessToken ? decrypt(account.accessToken) : ''
+  if (!accessToken) {
+    throw new Error('OpenAI account has no valid accessToken')
+  }
+
+  let response = await requestCodexUsage(account, accessToken)
+
+  if (response.status === 401 && account.refreshToken) {
+    logger.info(`🔄 Codex usage request returned 401, refreshing OpenAI token: ${accountId}`)
+    await refreshAccountToken(accountId)
+    account = await getAccount(accountId)
+    accessToken = account.accessToken ? decrypt(account.accessToken) : ''
+    if (!accessToken) {
+      throw new Error('OpenAI account has no valid accessToken after refresh')
+    }
+    response = await requestCodexUsage(account, accessToken)
+  }
+
+  if (response.status < 200 || response.status >= 300) {
+    const errorMessage =
+      response.data?.error?.message || response.data?.message || response.statusText || 'Unknown'
+    const error = new Error(`Codex usage request failed (${response.status}): ${errorMessage}`)
+    error.status = response.status
+    error.details = response.data
+    throw error
+  }
+
+  const snapshot = extractCodexUsageSnapshotFromPayload(response.data)
+  if (!snapshot) {
+    throw new Error('Codex usage response is empty or unsupported')
+  }
+
+  await updateCodexUsageSnapshot(accountId, snapshot)
+
+  const updatedAccount = await getAccount(accountId)
+  return buildCodexUsageSnapshot(updatedAccount)
+}
+
 module.exports = {
   createAccount,
   getAccount,
@@ -1277,6 +1480,10 @@ module.exports = {
   updateAccountUsage,
   recordUsage, // 别名，指向updateAccountUsage
   updateCodexUsageSnapshot,
+  refreshCodexUsageSnapshot,
+  extractCodexRateLimitResetCreditsAvailableCount,
+  extractCodexUsageSnapshotFromPayload,
+  parseCodexUsagePayload,
   encrypt,
   decrypt,
   encryptor // 暴露加密器以便测试和监控

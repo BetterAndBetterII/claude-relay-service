@@ -1147,6 +1147,17 @@
                   </div>
                   <div v-else-if="account.platform === 'openai'" class="space-y-2">
                     <div v-if="account.codexUsage" class="space-y-2">
+                      <div
+                        v-if="hasCodexResetCredits(account)"
+                        class="flex items-center justify-between rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1 text-[11px] dark:border-emerald-500/30 dark:bg-emerald-500/10"
+                      >
+                        <span class="font-medium text-emerald-700 dark:text-emerald-300">
+                          <i class="fas fa-rotate mr-1" />主动重置
+                        </span>
+                        <span class="font-semibold text-emerald-800 dark:text-emerald-200">
+                          {{ formatCodexResetCredits(account) }} 次
+                        </span>
+                      </div>
                       <div class="rounded-lg bg-gray-50 p-2 dark:bg-gray-700/70">
                         <div class="flex items-center gap-2">
                           <span
@@ -1350,6 +1361,21 @@
                     >
                       <i class="fas fa-chart-line" />
                       <span class="ml-1">详情</span>
+                    </button>
+                    <button
+                      v-if="canRefreshCodexUsage(account)"
+                      class="rounded bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-800/50"
+                      :disabled="account.isRefreshingCodexUsage"
+                      title="从 ChatGPT usage 接口刷新 Codex 限额和主动重置次数"
+                      @click="refreshCodexUsage(account)"
+                    >
+                      <i
+                        :class="[
+                          'fas fa-rotate',
+                          account.isRefreshingCodexUsage ? 'animate-spin' : ''
+                        ]"
+                      />
+                      <span class="ml-1">限额</span>
                     </button>
                     <button
                       class="rounded bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-800/50"
@@ -1747,6 +1773,17 @@
             </div>
             <div v-else-if="account.platform === 'openai'" class="space-y-2">
               <div v-if="account.codexUsage" class="space-y-2">
+                <div
+                  v-if="hasCodexResetCredits(account)"
+                  class="flex items-center justify-between rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1 text-[11px] dark:border-emerald-500/30 dark:bg-emerald-500/10"
+                >
+                  <span class="font-medium text-emerald-700 dark:text-emerald-300">
+                    <i class="fas fa-rotate mr-1" />主动重置
+                  </span>
+                  <span class="font-semibold text-emerald-800 dark:text-emerald-200">
+                    {{ formatCodexResetCredits(account) }} 次
+                  </span>
+                </div>
                 <div class="rounded-lg bg-gray-50 p-2 dark:bg-gray-700">
                   <div class="flex items-center gap-2">
                     <span
@@ -1883,6 +1920,15 @@
             >
               <i class="fas fa-chart-line" />
               详情
+            </button>
+            <button
+              v-if="canRefreshCodexUsage(account)"
+              class="flex flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-600 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-800/50"
+              :disabled="account.isRefreshingCodexUsage"
+              @click="refreshCodexUsage(account)"
+            >
+              <i :class="['fas fa-rotate', account.isRefreshingCodexUsage ? 'animate-spin' : '']" />
+              限额
             </button>
             <button
               class="flex flex-1 items-center justify-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 transition-colors hover:bg-red-100 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-800/50"
@@ -2627,6 +2673,8 @@ const accountMatchesKeyword = (account, normalizedKeyword) => {
 
 const canViewUsage = (account) => !!account && supportedUsagePlatforms.includes(account.platform)
 
+const canRefreshCodexUsage = (account) => account?.platform === 'openai'
+
 // 判断是否显示重置状态按钮
 const showResetButton = (account) => {
   const supportedPlatforms = [
@@ -2668,6 +2716,17 @@ const getAccountActions = (account) => {
       icon: 'fa-chart-line',
       color: 'indigo',
       handler: () => openAccountUsageModal(account)
+    })
+  }
+
+  if (canRefreshCodexUsage(account)) {
+    actions.push({
+      key: 'codex-usage',
+      label: account.isRefreshingCodexUsage ? '刷新中...' : '刷新限额',
+      icon: 'fa-rotate',
+      color: 'green',
+      disabled: account.isRefreshingCodexUsage,
+      handler: () => refreshCodexUsage(account)
     })
   }
 
@@ -3195,6 +3254,33 @@ const refreshVisibleBalances = async () => {
     }
   } finally {
     refreshingBalances.value = false
+  }
+}
+
+const refreshCodexUsage = async (account) => {
+  if (!canRefreshCodexUsage(account) || account.isRefreshingCodexUsage) return
+
+  accounts.value = accounts.value.map((item) =>
+    item.id === account.id ? { ...item, isRefreshingCodexUsage: true } : item
+  )
+
+  try {
+    const response = await httpApis.refreshOpenAICodexUsageApi(account.id)
+    if (!response?.success) {
+      throw new Error(response?.message || '刷新失败')
+    }
+
+    accounts.value = accounts.value.map((item) =>
+      item.id === account.id
+        ? { ...item, codexUsage: response.data || null, isRefreshingCodexUsage: false }
+        : item
+    )
+    showToast('Codex 限额已刷新', 'success')
+  } catch (error) {
+    accounts.value = accounts.value.map((item) =>
+      item.id === account.id ? { ...item, isRefreshingCodexUsage: false } : item
+    )
+    showToast(`Codex 限额刷新失败: ${error?.message || '未知错误'}`, 'error')
   }
 }
 
@@ -4947,6 +5033,28 @@ const getCodexUsageWidth = (usageItem) => {
     return '0%'
   }
   return `${percent}%`
+}
+
+const getCodexResetCredits = (account) => {
+  const value = account?.codexUsage?.rateLimitResetCreditsAvailableCount
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+const hasCodexResetCredits = (account) => getCodexResetCredits(account) !== null
+
+const formatCodexResetCredits = (account) => {
+  const credits = getCodexResetCredits(account)
+  if (credits === null) {
+    return '--'
+  }
+  return Number.isInteger(credits) ? credits.toString() : credits.toFixed(2)
 }
 
 // 时间窗口标签
