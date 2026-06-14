@@ -806,6 +806,43 @@ router.post('/:accountId/codex-usage/refresh', authenticateAdmin, async (req, re
   }
 })
 
+// 通过指定 OpenAI/Codex 账户发送 Codex 邀请邮件
+router.post('/:accountId/codex-invite', authenticateAdmin, async (req, res) => {
+  try {
+    const { accountId } = req.params
+    const { emails, referralKey } = req.body || {}
+
+    const inviteResult = await openaiAccountService.sendCodexInvite(accountId, {
+      emails,
+      referralKey
+    })
+
+    const inviteCount = inviteResult.invites?.length || inviteResult.emails?.length || 0
+    if (inviteResult.ok) {
+      logger.success(`Admin sent Codex invite via OpenAI account: ${accountId}`)
+    } else {
+      logger.warn(
+        `Codex invite upstream failed for OpenAI account ${accountId}: ${inviteResult.statusCode}`
+      )
+    }
+
+    return res.json({
+      success: inviteResult.ok,
+      message: inviteResult.ok
+        ? `已发送 ${inviteCount} 个 Codex 邀请`
+        : `Codex 邀请请求失败 (${inviteResult.statusCode})`,
+      data: inviteResult
+    })
+  } catch (error) {
+    logger.error('❌ Failed to send OpenAI Codex invite:', error)
+    return res.status(error.status || 500).json({
+      success: false,
+      error: 'Failed to send Codex invite',
+      message: error.message
+    })
+  }
+})
+
 // 切换 OpenAI 账户调度状态
 router.put('/:accountId/toggle-schedulable', authenticateAdmin, async (req, res) => {
   try {

@@ -99,4 +99,18 @@ describe('OpenAI Codex usage helpers', () => {
       })
     )
   })
+
+  it('normalizes Codex invite emails from mixed separators', () => {
+    const emails = openaiAccountService.normalizeCodexInviteEmails(
+      'User@example.com, user@example.com\nsecond@example.com；third@example.com'
+    )
+
+    expect(emails).toEqual(['User@example.com', 'second@example.com', 'third@example.com'])
+  })
+
+  it('rejects invalid Codex invite emails', () => {
+    expect(() => openaiAccountService.normalizeCodexInviteEmails(['not-an-email'])).toThrow(
+      'Invalid email address'
+    )
+  })
 })

@@ -1404,6 +1404,15 @@
                       <span class="ml-1">限额</span>
                     </button>
                     <button
+                      v-if="canSendCodexInvite(account)"
+                      class="rounded bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:hover:bg-sky-800/50"
+                      title="通过该 OpenAI/Codex 账户发送邀请"
+                      @click="openCodexInviteModal(account)"
+                    >
+                      <i class="fas fa-paper-plane" />
+                      <span class="ml-1">邀请</span>
+                    </button>
+                    <button
                       class="rounded bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-800/50"
                       title="查看错误历史"
                       @click="openErrorHistory(account)"
@@ -1982,6 +1991,14 @@
               限额
             </button>
             <button
+              v-if="canSendCodexInvite(account)"
+              class="flex flex-1 items-center justify-center gap-1 rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-600 transition-colors hover:bg-sky-100 dark:bg-sky-900/40 dark:text-sky-300 dark:hover:bg-sky-800/50"
+              @click="openCodexInviteModal(account)"
+            >
+              <i class="fas fa-paper-plane" />
+              邀请
+            </button>
+            <button
               class="flex flex-1 items-center justify-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 transition-colors hover:bg-red-100 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-800/50"
               @click="openErrorHistory(account)"
             >
@@ -2203,6 +2220,108 @@
       @close="closeBalanceScriptModal"
       @saved="handleBalanceScriptSaved"
     />
+
+    <!-- Codex 邀请弹窗 -->
+    <el-dialog
+      v-model="showCodexInviteModal"
+      :close-on-click-modal="!codexInviteSending"
+      title="发送 Codex 邀请"
+      width="520px"
+    >
+      <div class="space-y-4">
+        <div
+          class="rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-800 dark:bg-sky-900/30 dark:text-sky-200"
+        >
+          <div class="font-medium">
+            使用账户：{{ codexInviteAccount?.name || codexInviteAccount?.email || 'OpenAI 账户' }}
+          </div>
+          <div class="mt-1 text-xs opacity-80">
+            后端会使用该账户的 OAuth token 请求 ChatGPT invite 接口，token 不会暴露到前端。
+          </div>
+        </div>
+
+        <label class="block">
+          <span class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">
+            邀请邮箱
+          </span>
+          <textarea
+            v-model="codexInviteEmails"
+            class="min-h-[120px] w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:placeholder-gray-500"
+            :disabled="codexInviteSending"
+            placeholder="每行一个邮箱，也可以用逗号/空格分隔；单次最多 10 个"
+          />
+        </label>
+
+        <label class="block">
+          <span class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">
+            Referral Key
+          </span>
+          <input
+            v-model="codexInviteReferralKey"
+            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:placeholder-gray-500"
+            :disabled="codexInviteSending"
+            placeholder="codex_referral_persistent_invite"
+          />
+        </label>
+
+        <div
+          v-if="codexInviteResult"
+          class="rounded-lg border px-3 py-2 text-sm"
+          :class="
+            codexInviteResult.ok
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-900/30 dark:text-emerald-200'
+              : 'border-red-200 bg-red-50 text-red-800 dark:border-red-500/40 dark:bg-red-900/30 dark:text-red-200'
+          "
+        >
+          <div class="font-medium">
+            {{ codexInviteResult.ok ? '邀请请求成功' : '邀请请求失败' }}
+            <span v-if="codexInviteResult.statusCode">({{ codexInviteResult.statusCode }})</span>
+          </div>
+          <div v-if="codexInviteResult.requestId" class="mt-1 text-xs opacity-80">
+            Request ID: {{ codexInviteResult.requestId }}
+          </div>
+          <div v-if="codexInviteResult.invites?.length" class="mt-2 space-y-1">
+            <div
+              v-for="invite in codexInviteResult.invites"
+              :key="`${invite.email}-${invite.referralId || invite.inviteUrl}`"
+              class="flex items-center justify-between gap-2 rounded bg-white/60 px-2 py-1 text-xs dark:bg-gray-800/60"
+            >
+              <span class="truncate">{{ invite.email }}</span>
+              <button
+                v-if="invite.inviteUrl"
+                class="shrink-0 text-sky-600 hover:underline dark:text-sky-300"
+                @click="copyText(invite.inviteUrl)"
+              >
+                复制链接
+              </button>
+            </div>
+          </div>
+          <pre
+            v-else-if="codexInviteResult.errorText"
+            class="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-white/60 p-2 text-xs dark:bg-gray-800/60"
+            >{{ codexInviteResult.errorText }}</pre
+          >
+        </div>
+      </div>
+
+      <template #footer>
+        <button
+          class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+          :disabled="codexInviteSending"
+          @click="closeCodexInviteModal"
+        >
+          关闭
+        </button>
+        <button
+          class="ml-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="codexInviteSending"
+          @click="sendCodexInvite"
+        >
+          <i :class="['fas', codexInviteSending ? 'fa-spinner animate-spin' : 'fa-paper-plane']" />
+          <span class="ml-1">{{ codexInviteSending ? '发送中...' : '发送邀请' }}</span>
+        </button>
+      </template>
+    </el-dialog>
 
     <!-- 账户统计弹窗 -->
     <el-dialog
@@ -2511,6 +2630,14 @@ const testingAccount = ref(null)
 const showScheduledTestModal = ref(false)
 const scheduledTestAccount = ref(null)
 
+// Codex 邀请弹窗状态
+const showCodexInviteModal = ref(false)
+const codexInviteAccount = ref(null)
+const codexInviteEmails = ref('')
+const codexInviteReferralKey = ref('codex_referral_persistent_invite')
+const codexInviteSending = ref(false)
+const codexInviteResult = ref(null)
+
 // 账户统计弹窗状态
 const showAccountStatsModal = ref(false)
 
@@ -2726,6 +2853,8 @@ const canViewUsage = (account) => !!account && supportedUsagePlatforms.includes(
 
 const canRefreshCodexUsage = (account) => account?.platform === 'openai'
 
+const canSendCodexInvite = (account) => account?.platform === 'openai' && !!account?.accessToken
+
 // 判断是否显示重置状态按钮
 const showResetButton = (account) => {
   const supportedPlatforms = [
@@ -2778,6 +2907,16 @@ const getAccountActions = (account) => {
       color: 'green',
       disabled: account.isRefreshingCodexUsage,
       handler: () => refreshCodexUsage(account)
+    })
+  }
+
+  if (canSendCodexInvite(account)) {
+    actions.push({
+      key: 'codex-invite',
+      label: '发送邀请',
+      icon: 'fa-paper-plane',
+      color: 'blue',
+      handler: () => openCodexInviteModal(account)
     })
   }
 
@@ -3332,6 +3471,92 @@ const refreshCodexUsage = async (account) => {
       item.id === account.id ? { ...item, isRefreshingCodexUsage: false } : item
     )
     showToast(`Codex 限额刷新失败: ${error?.message || '未知错误'}`, 'error')
+  }
+}
+
+const parseCodexInviteEmails = () =>
+  codexInviteEmails.value
+    .split(/[\s,;，；]+/)
+    .map((email) => email.trim())
+    .filter(Boolean)
+
+const formatCodexInviteError = (payload) => {
+  const upstream = payload?.upstream
+  if (upstream?.error?.message) return upstream.error.message
+  if (upstream?.message) return upstream.message
+  if (payload?.upstreamRaw) return payload.upstreamRaw
+  return payload?.message || '上游未返回详细错误'
+}
+
+const openCodexInviteModal = (account) => {
+  if (!canSendCodexInvite(account)) {
+    showToast('该账户不支持 Codex 邀请', 'warning')
+    return
+  }
+
+  codexInviteAccount.value = account
+  codexInviteEmails.value = ''
+  codexInviteReferralKey.value = 'codex_referral_persistent_invite'
+  codexInviteResult.value = null
+  showCodexInviteModal.value = true
+}
+
+const closeCodexInviteModal = () => {
+  if (codexInviteSending.value) return
+  showCodexInviteModal.value = false
+  codexInviteAccount.value = null
+  codexInviteResult.value = null
+}
+
+const sendCodexInvite = async () => {
+  const account = codexInviteAccount.value
+  if (!canSendCodexInvite(account) || codexInviteSending.value) return
+
+  const emails = parseCodexInviteEmails()
+  if (emails.length === 0) {
+    showToast('请至少输入一个邮箱', 'warning')
+    return
+  }
+  if (emails.length > 10) {
+    showToast('单次最多邀请 10 个邮箱', 'warning')
+    return
+  }
+
+  codexInviteSending.value = true
+  codexInviteResult.value = null
+
+  try {
+    const response = await httpApis.sendOpenAICodexInviteApi(account.id, {
+      emails,
+      referralKey: codexInviteReferralKey.value
+    })
+    const result = response?.data || null
+
+    codexInviteResult.value = result
+      ? {
+          ...result,
+          errorText: result.ok ? '' : formatCodexInviteError(result)
+        }
+      : {
+          ok: false,
+          statusCode: null,
+          errorText: response?.message || '邀请请求失败'
+        }
+
+    if (response?.success) {
+      showToast(response.message || 'Codex 邀请已发送', 'success')
+    } else {
+      showToast(`Codex 邀请失败: ${codexInviteResult.value.errorText}`, 'error')
+    }
+  } catch (error) {
+    codexInviteResult.value = {
+      ok: false,
+      statusCode: null,
+      errorText: error?.message || '未知错误'
+    }
+    showToast(`Codex 邀请失败: ${codexInviteResult.value.errorText}`, 'error')
+  } finally {
+    codexInviteSending.value = false
   }
 }
 

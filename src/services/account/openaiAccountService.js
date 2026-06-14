@@ -25,9 +25,21 @@ const OPENAI_ACCOUNT_KEY_PREFIX = 'openai:account:'
 const SHARED_OPENAI_ACCOUNTS_KEY = 'shared_openai_accounts'
 const ACCOUNT_SESSION_MAPPING_PREFIX = 'openai_session_account_mapping:'
 const CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
+const CODEX_INVITE_URL = 'https://chatgpt.com/backend-api/wham/referrals/invite'
+const CODEX_INVITE_REFERRAL_KEY = 'codex_referral_persistent_invite'
+const CODEX_INVITE_MAX_EMAILS = 10
 const CODEX_USAGE_HEADERS = {
   'Content-Type': 'application/json',
   'User-Agent': 'codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal'
+}
+const CODEX_INVITE_HEADERS = {
+  Accept: 'application/json',
+  'Content-Type': 'application/json',
+  'Oai-Language': 'zh-CN',
+  Originator: 'Codex Desktop',
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36'
 }
 
 // 🧹 定期清理缓存（每10分钟）
@@ -150,6 +162,71 @@ function extractCodexUsageSnapshotFromPayload(payload) {
 
   const hasData = Object.values(snapshot).some((value) => value !== null && value !== undefined)
   return hasData ? snapshot : null
+}
+
+function createValidationError(message) {
+  const error = new Error(message)
+  error.status = 400
+  return error
+}
+
+function normalizeCodexInviteEmails(input, maxEmails = CODEX_INVITE_MAX_EMAILS) {
+  const rawEmails = Array.isArray(input)
+    ? input
+    : String(input || '')
+        .split(/[\s,;，；]+/)
+        .filter(Boolean)
+
+  const emails = []
+  const seen = new Set()
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+  for (const rawEmail of rawEmails) {
+    const email = String(rawEmail || '').trim()
+    if (!email) {
+      continue
+    }
+
+    if (!emailPattern.test(email)) {
+      throw createValidationError(`Invalid email address: ${email}`)
+    }
+
+    const normalized = email.toLowerCase()
+    if (!seen.has(normalized)) {
+      seen.add(normalized)
+      emails.push(email)
+    }
+  }
+
+  if (emails.length === 0) {
+    throw createValidationError('At least one email address is required')
+  }
+
+  if (emails.length > maxEmails) {
+    throw createValidationError(`A maximum of ${maxEmails} email addresses can be invited at once`)
+  }
+
+  return emails
+}
+
+function normalizeCodexInviteReferralKey(referralKey) {
+  const normalized = String(referralKey || '').trim()
+  return normalized || CODEX_INVITE_REFERRAL_KEY
+}
+
+function extractCodexInvitesFromPayload(payload) {
+  const upstream = parseCodexUsagePayload(payload)
+  if (!upstream || !Array.isArray(upstream.invites)) {
+    return []
+  }
+
+  return upstream.invites
+    .filter((invite) => invite && typeof invite === 'object')
+    .map((invite) => ({
+      email: invite.email || null,
+      inviteUrl: invite.invite_url || invite.inviteUrl || null,
+      referralId: invite.referral_id || invite.referralId || null
+    }))
 }
 
 function computeResetMeta(updatedAt, resetAfterSeconds) {
@@ -1412,6 +1489,45 @@ async function requestCodexUsage(account, accessToken) {
   return axios(requestOptions)
 }
 
+function applyOpenAIProxy(requestOptions, account, actionLabel) {
+  const proxyAgent = ProxyHelper.createProxyAgent(account.proxy)
+  if (!proxyAgent) {
+    return
+  }
+
+  requestOptions.httpAgent = proxyAgent
+  requestOptions.httpsAgent = proxyAgent
+  requestOptions.proxy = false
+  logger.info(
+    `🌐 Using proxy for OpenAI ${actionLabel}: ${ProxyHelper.getProxyDescription(account.proxy)}`
+  )
+}
+
+async function requestCodexInvite(account, accessToken, invitePayload) {
+  const headers = {
+    ...CODEX_INVITE_HEADERS,
+    Authorization: `Bearer ${accessToken}`
+  }
+
+  const chatgptAccountId = account.accountId || account.chatgptUserId
+  if (chatgptAccountId) {
+    headers['Chatgpt-Account-Id'] = chatgptAccountId
+  }
+
+  const requestOptions = {
+    method: 'POST',
+    url: CODEX_INVITE_URL,
+    headers,
+    data: invitePayload,
+    timeout: config.requestTimeout || 600000,
+    validateStatus: () => true
+  }
+
+  applyOpenAIProxy(requestOptions, account, 'Codex invite')
+
+  return axios(requestOptions)
+}
+
 async function refreshCodexUsageSnapshot(accountId) {
   let account = await getAccount(accountId)
   if (!account) {
@@ -1461,6 +1577,68 @@ async function refreshCodexUsageSnapshot(accountId) {
   return buildCodexUsageSnapshot(updatedAccount)
 }
 
+async function sendCodexInvite(accountId, options = {}) {
+  const emails = normalizeCodexInviteEmails(options.emails)
+  const referralKey = normalizeCodexInviteReferralKey(options.referralKey)
+  const invitePayload = {
+    referral_key: referralKey,
+    emails
+  }
+
+  let account = await getAccount(accountId)
+  if (!account) {
+    throw new Error('Account not found')
+  }
+
+  if (isTokenExpired(account)) {
+    await refreshAccountToken(accountId)
+    account = await getAccount(accountId)
+  }
+
+  let accessToken = account.accessToken ? decrypt(account.accessToken) : ''
+  if (!accessToken) {
+    throw new Error('OpenAI account has no valid accessToken')
+  }
+
+  let response = await requestCodexInvite(account, accessToken, invitePayload)
+
+  if (response.status === 401 && account.refreshToken) {
+    logger.info(`🔄 Codex invite request returned 401, refreshing OpenAI token: ${accountId}`)
+    await refreshAccountToken(accountId)
+    account = await getAccount(accountId)
+    accessToken = account.accessToken ? decrypt(account.accessToken) : ''
+    if (!accessToken) {
+      throw new Error('OpenAI account has no valid accessToken after refresh')
+    }
+    response = await requestCodexInvite(account, accessToken, invitePayload)
+  }
+
+  const upstream = parseCodexUsagePayload(response.data)
+  const result = {
+    ok: response.status >= 200 && response.status < 300,
+    statusCode: response.status,
+    requestId: response.headers?.['x-oai-request-id'] || null,
+    account: {
+      id: account.id,
+      name: account.name || '',
+      email: account.email || '',
+      chatgptAccountId: account.accountId || account.chatgptUserId || ''
+    },
+    emails,
+    referralKey,
+    invites: extractCodexInvitesFromPayload(response.data)
+  }
+
+  if (upstream) {
+    result.upstream = upstream
+  } else if (response.data !== undefined && response.data !== null) {
+    result.upstreamRaw =
+      typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
+  }
+
+  return result
+}
+
 module.exports = {
   createAccount,
   getAccount,
@@ -1481,6 +1659,8 @@ module.exports = {
   recordUsage, // 别名，指向updateAccountUsage
   updateCodexUsageSnapshot,
   refreshCodexUsageSnapshot,
+  sendCodexInvite,
+  normalizeCodexInviteEmails,
   extractCodexRateLimitResetCreditsAvailableCount,
   extractCodexUsageSnapshotFromPayload,
   parseCodexUsagePayload,

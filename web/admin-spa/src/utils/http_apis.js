@@ -183,6 +183,8 @@ export const exchangeOpenAICodeApi = (data) =>
   request({ url: '/admin/openai-accounts/exchange-code', method: 'POST', data })
 export const refreshOpenAICodexUsageApi = (id) =>
   request({ url: `/admin/openai-accounts/${id}/codex-usage/refresh`, method: 'POST' })
+export const sendOpenAICodexInviteApi = (id, data) =>
+  request({ url: `/admin/openai-accounts/${id}/codex-invite`, method: 'POST', data })
 
 // OpenAI Responses 账户
 export const getOpenAIResponsesAccountsApi = () =>
