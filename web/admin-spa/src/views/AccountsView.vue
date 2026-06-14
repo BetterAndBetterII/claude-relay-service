@@ -894,19 +894,6 @@
                       <!-- 5小时窗口 -->
                       <div class="rounded-lg bg-gray-50 p-2 dark:bg-gray-700/70">
                         <div class="flex items-center gap-2">
-                          <button
-                            class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[11px] text-emerald-700 transition-colors hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500/20 dark:text-emerald-300 dark:hover:bg-emerald-500/30"
-                            :disabled="account.isRefreshingCodexUsage"
-                            title="刷新 Codex 限额和主动重置次数"
-                            @click.stop="refreshCodexUsage(account)"
-                          >
-                            <i
-                              :class="[
-                                'fas fa-rotate',
-                                account.isRefreshingCodexUsage ? 'animate-spin' : ''
-                              ]"
-                            />
-                          </button>
                           <span
                             class="inline-flex min-w-[32px] justify-center rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300"
                           >
@@ -1173,6 +1160,19 @@
                       </div>
                       <div class="rounded-lg bg-gray-50 p-2 dark:bg-gray-700/70">
                         <div class="flex items-center gap-2">
+                          <button
+                            class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[11px] text-emerald-700 transition-colors hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500/20 dark:text-emerald-300 dark:hover:bg-emerald-500/30"
+                            :disabled="account.isRefreshingCodexUsage"
+                            title="刷新 Codex 限额和主动重置次数"
+                            @click.stop="refreshCodexUsage(account)"
+                          >
+                            <i
+                              :class="[
+                                'fas fa-rotate',
+                                account.isRefreshingCodexUsage ? 'animate-spin' : ''
+                              ]"
+                            />
+                          </button>
                           <span
                             class="inline-flex min-w-[32px] justify-center rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300"
                           >
