@@ -806,6 +806,38 @@ router.post('/:accountId/codex-usage/refresh', authenticateAdmin, async (req, re
   }
 })
 
+// 消耗一次 Codex 主动重置次数，并同步最新 usage 快照
+router.post('/:accountId/codex-reset-credits/consume', authenticateAdmin, async (req, res) => {
+  try {
+    const { accountId } = req.params
+
+    const consumeResult = await openaiAccountService.consumeCodexResetCredit(accountId)
+
+    if (consumeResult.ok) {
+      logger.success(`Admin consumed Codex reset credit for OpenAI account: ${accountId}`)
+    } else {
+      logger.warn(
+        `Codex reset credit consume failed for OpenAI account ${accountId}: ${consumeResult.statusCode}`
+      )
+    }
+
+    return res.json({
+      success: consumeResult.ok,
+      message: consumeResult.ok
+        ? '已消耗 1 次 Codex 主动重置次数'
+        : `Codex 主动重置失败 (${consumeResult.statusCode})`,
+      data: consumeResult
+    })
+  } catch (error) {
+    logger.error('❌ Failed to consume OpenAI Codex reset credit:', error)
+    return res.status(error.status || 500).json({
+      success: false,
+      error: 'Failed to consume Codex reset credit',
+      message: error.message
+    })
+  }
+})
+
 // 通过指定 OpenAI/Codex 账户发送 Codex 邀请邮件
 router.post('/:accountId/codex-invite', authenticateAdmin, async (req, res) => {
   try {

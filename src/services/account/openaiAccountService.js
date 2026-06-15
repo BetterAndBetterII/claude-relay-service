@@ -25,6 +25,8 @@ const OPENAI_ACCOUNT_KEY_PREFIX = 'openai:account:'
 const SHARED_OPENAI_ACCOUNTS_KEY = 'shared_openai_accounts'
 const ACCOUNT_SESSION_MAPPING_PREFIX = 'openai_session_account_mapping:'
 const CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
+const CODEX_RATE_LIMIT_RESET_CREDITS_CONSUME_URL =
+  'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume'
 const CODEX_INVITE_URL = 'https://chatgpt.com/backend-api/wham/referrals/invite'
 const CODEX_INVITE_REFERRAL_KEY = 'codex_referral_persistent_invite'
 const CODEX_INVITE_MAX_EMAILS = 10
@@ -1528,6 +1530,33 @@ async function requestCodexInvite(account, accessToken, invitePayload) {
   return axios(requestOptions)
 }
 
+async function requestCodexResetCreditConsume(account, accessToken, redeemRequestId) {
+  const headers = {
+    ...CODEX_USAGE_HEADERS,
+    Authorization: `Bearer ${accessToken}`
+  }
+
+  const chatgptAccountId = account.accountId || account.chatgptUserId
+  if (chatgptAccountId) {
+    headers['Chatgpt-Account-Id'] = chatgptAccountId
+  }
+
+  const requestOptions = {
+    method: 'POST',
+    url: CODEX_RATE_LIMIT_RESET_CREDITS_CONSUME_URL,
+    headers,
+    data: {
+      redeem_request_id: redeemRequestId
+    },
+    timeout: config.requestTimeout || 600000,
+    validateStatus: () => true
+  }
+
+  applyOpenAIProxy(requestOptions, account, 'Codex reset credit consume')
+
+  return axios(requestOptions)
+}
+
 async function refreshCodexUsageSnapshot(accountId) {
   let account = await getAccount(accountId)
   if (!account) {
@@ -1639,6 +1668,74 @@ async function sendCodexInvite(accountId, options = {}) {
   return result
 }
 
+async function consumeCodexResetCredit(accountId) {
+  const redeemRequestId = uuidv4()
+  let account = await getAccount(accountId)
+  if (!account) {
+    throw new Error('Account not found')
+  }
+
+  if (isTokenExpired(account)) {
+    await refreshAccountToken(accountId)
+    account = await getAccount(accountId)
+  }
+
+  let accessToken = account.accessToken ? decrypt(account.accessToken) : ''
+  if (!accessToken) {
+    throw new Error('OpenAI account has no valid accessToken')
+  }
+
+  let response = await requestCodexResetCreditConsume(account, accessToken, redeemRequestId)
+
+  if (response.status === 401 && account.refreshToken) {
+    logger.info(`🔄 Codex reset credit consume returned 401, refreshing OpenAI token: ${accountId}`)
+    await refreshAccountToken(accountId)
+    account = await getAccount(accountId)
+    accessToken = account.accessToken ? decrypt(account.accessToken) : ''
+    if (!accessToken) {
+      throw new Error('OpenAI account has no valid accessToken after refresh')
+    }
+    response = await requestCodexResetCreditConsume(account, accessToken, redeemRequestId)
+  }
+
+  const upstream = parseCodexUsagePayload(response.data)
+  const result = {
+    ok: response.status >= 200 && response.status < 300,
+    statusCode: response.status,
+    requestId: response.headers?.['x-oai-request-id'] || null,
+    redeemRequestId,
+    account: {
+      id: account.id,
+      name: account.name || '',
+      email: account.email || '',
+      chatgptAccountId: account.accountId || account.chatgptUserId || ''
+    },
+    codexUsage: null
+  }
+
+  if (upstream) {
+    result.upstream = upstream
+  } else if (response.data !== undefined && response.data !== null && response.data !== '') {
+    result.upstreamRaw =
+      typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
+  }
+
+  if (!result.ok) {
+    return result
+  }
+
+  try {
+    result.codexUsage = await refreshCodexUsageSnapshot(accountId)
+  } catch (error) {
+    result.usageRefreshError = error.message
+    logger.warn(
+      `Codex reset credit consumed but usage refresh failed for OpenAI account ${accountId}: ${error.message}`
+    )
+  }
+
+  return result
+}
+
 module.exports = {
   createAccount,
   getAccount,
@@ -1659,6 +1756,7 @@ module.exports = {
   recordUsage, // 别名，指向updateAccountUsage
   updateCodexUsageSnapshot,
   refreshCodexUsageSnapshot,
+  consumeCodexResetCredit,
   sendCodexInvite,
   normalizeCodexInviteEmails,
   extractCodexRateLimitResetCreditsAvailableCount,

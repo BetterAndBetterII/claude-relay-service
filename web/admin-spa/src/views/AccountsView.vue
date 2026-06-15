@@ -1154,16 +1154,37 @@
                         <span class="font-medium text-emerald-700 dark:text-emerald-300">
                           <i class="fas fa-rotate mr-1" />主动重置
                         </span>
-                        <span class="font-semibold text-emerald-800 dark:text-emerald-200">
-                          {{ formatCodexResetCredits(account) }} 次
-                        </span>
+                        <div class="flex items-center gap-2">
+                          <span class="font-semibold text-emerald-800 dark:text-emerald-200">
+                            {{ formatCodexResetCredits(account) }} 次
+                          </span>
+                          <button
+                            class="rounded bg-emerald-600 px-2 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="
+                              account.isConsumingCodexResetCredit ||
+                              !canConsumeCodexResetCredit(account)
+                            "
+                            title="消耗 1 次主动重置次数，重置 Codex 限额"
+                            @click.stop="consumeCodexResetCredit(account)"
+                          >
+                            <i
+                              :class="[
+                                'fas',
+                                account.isConsumingCodexResetCredit
+                                  ? 'fa-spinner animate-spin'
+                                  : 'fa-bolt'
+                              ]"
+                            />
+                            重置
+                          </button>
+                        </div>
                       </div>
                       <div class="rounded-lg bg-gray-50 p-2 dark:bg-gray-700/70">
                         <div class="flex items-center gap-2">
                           <button
                             class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[11px] text-emerald-700 transition-colors hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500/20 dark:text-emerald-300 dark:hover:bg-emerald-500/30"
                             :disabled="account.isRefreshingCodexUsage"
-                            title="刷新 Codex 限额和主动重置次数"
+                            title="同步 Codex 限额和主动重置次数"
                             @click.stop="refreshCodexUsage(account)"
                           >
                             <i
@@ -1240,7 +1261,7 @@
                       <button
                         class="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-800/50"
                         :disabled="account.isRefreshingCodexUsage"
-                        title="从 ChatGPT usage 接口刷新 Codex 限额和主动重置次数"
+                        title="从 ChatGPT usage 接口同步 Codex 限额和主动重置次数"
                         @click.stop="refreshCodexUsage(account)"
                       >
                         <i
@@ -1249,7 +1270,7 @@
                             account.isRefreshingCodexUsage ? 'animate-spin' : ''
                           ]"
                         />
-                        刷新限额
+                        同步限额
                       </button>
                     </div>
                   </div>
@@ -1392,7 +1413,7 @@
                       v-if="canRefreshCodexUsage(account)"
                       class="rounded bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-800/50"
                       :disabled="account.isRefreshingCodexUsage"
-                      title="从 ChatGPT usage 接口刷新 Codex 限额和主动重置次数"
+                      title="从 ChatGPT usage 接口同步 Codex 限额和主动重置次数"
                       @click="refreshCodexUsage(account)"
                     >
                       <i
@@ -1401,7 +1422,24 @@
                           account.isRefreshingCodexUsage ? 'animate-spin' : ''
                         ]"
                       />
-                      <span class="ml-1">限额</span>
+                      <span class="ml-1">同步</span>
+                    </button>
+                    <button
+                      v-if="canConsumeCodexResetCredit(account)"
+                      class="rounded bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-800/50"
+                      :disabled="account.isConsumingCodexResetCredit"
+                      title="消耗 1 次主动重置次数，重置 Codex 限额"
+                      @click="consumeCodexResetCredit(account)"
+                    >
+                      <i
+                        :class="[
+                          'fas',
+                          account.isConsumingCodexResetCredit
+                            ? 'fa-spinner animate-spin'
+                            : 'fa-bolt'
+                        ]"
+                      />
+                      <span class="ml-1">重置</span>
                     </button>
                     <button
                       v-if="canSendCodexInvite(account)"
@@ -1815,16 +1853,36 @@
                   <span class="font-medium text-emerald-700 dark:text-emerald-300">
                     <i class="fas fa-rotate mr-1" />主动重置
                   </span>
-                  <span class="font-semibold text-emerald-800 dark:text-emerald-200">
-                    {{ formatCodexResetCredits(account) }} 次
-                  </span>
+                  <div class="flex items-center gap-2">
+                    <span class="font-semibold text-emerald-800 dark:text-emerald-200">
+                      {{ formatCodexResetCredits(account) }} 次
+                    </span>
+                    <button
+                      class="rounded bg-emerald-600 px-2 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      :disabled="
+                        account.isConsumingCodexResetCredit || !canConsumeCodexResetCredit(account)
+                      "
+                      title="消耗 1 次主动重置次数，重置 Codex 限额"
+                      @click.stop="consumeCodexResetCredit(account)"
+                    >
+                      <i
+                        :class="[
+                          'fas',
+                          account.isConsumingCodexResetCredit
+                            ? 'fa-spinner animate-spin'
+                            : 'fa-bolt'
+                        ]"
+                      />
+                      重置
+                    </button>
+                  </div>
                 </div>
                 <div class="rounded-lg bg-gray-50 p-2 dark:bg-gray-700">
                   <div class="flex items-center gap-2">
                     <button
                       class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[11px] text-emerald-700 transition-colors hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500/20 dark:text-emerald-300 dark:hover:bg-emerald-500/30"
                       :disabled="account.isRefreshingCodexUsage"
-                      title="刷新 Codex 限额和主动重置次数"
+                      title="同步 Codex 限额和主动重置次数"
                       @click.stop="refreshCodexUsage(account)"
                     >
                       <i
@@ -1901,13 +1959,13 @@
                 <button
                   class="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-800/50"
                   :disabled="account.isRefreshingCodexUsage"
-                  title="从 ChatGPT usage 接口刷新 Codex 限额和主动重置次数"
+                  title="从 ChatGPT usage 接口同步 Codex 限额和主动重置次数"
                   @click.stop="refreshCodexUsage(account)"
                 >
                   <i
                     :class="['fas fa-rotate', account.isRefreshingCodexUsage ? 'animate-spin' : '']"
                   />
-                  刷新限额
+                  同步限额
                 </button>
               </div>
             </div>
@@ -1988,7 +2046,21 @@
               @click="refreshCodexUsage(account)"
             >
               <i :class="['fas fa-rotate', account.isRefreshingCodexUsage ? 'animate-spin' : '']" />
-              限额
+              同步
+            </button>
+            <button
+              v-if="canConsumeCodexResetCredit(account)"
+              class="flex flex-1 items-center justify-center gap-1 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-600 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-800/50"
+              :disabled="account.isConsumingCodexResetCredit"
+              @click="consumeCodexResetCredit(account)"
+            >
+              <i
+                :class="[
+                  'fas',
+                  account.isConsumingCodexResetCredit ? 'fa-spinner animate-spin' : 'fa-bolt'
+                ]"
+              />
+              重置
             </button>
             <button
               v-if="canSendCodexInvite(account)"
@@ -2853,6 +2925,9 @@ const canViewUsage = (account) => !!account && supportedUsagePlatforms.includes(
 
 const canRefreshCodexUsage = (account) => account?.platform === 'openai'
 
+const canConsumeCodexResetCredit = (account) =>
+  canRefreshCodexUsage(account) && (getCodexResetCredits(account) ?? 0) > 0
+
 const canSendCodexInvite = (account) => account?.platform === 'openai' && !!account?.accessToken
 
 // 判断是否显示重置状态按钮
@@ -2902,11 +2977,22 @@ const getAccountActions = (account) => {
   if (canRefreshCodexUsage(account)) {
     actions.push({
       key: 'codex-usage',
-      label: account.isRefreshingCodexUsage ? '刷新中...' : '刷新限额',
+      label: account.isRefreshingCodexUsage ? '同步中...' : '同步限额',
       icon: 'fa-rotate',
       color: 'green',
       disabled: account.isRefreshingCodexUsage,
       handler: () => refreshCodexUsage(account)
+    })
+  }
+
+  if (canConsumeCodexResetCredit(account)) {
+    actions.push({
+      key: 'codex-reset-credit',
+      label: account.isConsumingCodexResetCredit ? '重置中...' : '主动重置',
+      icon: 'fa-bolt',
+      color: 'orange',
+      disabled: account.isConsumingCodexResetCredit,
+      handler: () => consumeCodexResetCredit(account)
     })
   }
 
@@ -3457,7 +3543,7 @@ const refreshCodexUsage = async (account) => {
   try {
     const response = await httpApis.refreshOpenAICodexUsageApi(account.id)
     if (!response?.success) {
-      throw new Error(response?.message || '刷新失败')
+      throw new Error(response?.message || '同步失败')
     }
 
     accounts.value = accounts.value.map((item) =>
@@ -3465,12 +3551,68 @@ const refreshCodexUsage = async (account) => {
         ? { ...item, codexUsage: response.data || null, isRefreshingCodexUsage: false }
         : item
     )
-    showToast('Codex 限额已刷新', 'success')
+    showToast('Codex 限额已同步', 'success')
   } catch (error) {
     accounts.value = accounts.value.map((item) =>
       item.id === account.id ? { ...item, isRefreshingCodexUsage: false } : item
     )
-    showToast(`Codex 限额刷新失败: ${error?.message || '未知错误'}`, 'error')
+    showToast(`Codex 限额同步失败: ${error?.message || '未知错误'}`, 'error')
+  }
+}
+
+const formatCodexConsumeError = (payload) => {
+  if (!payload) return ''
+  const upstream = payload?.upstream
+  if (upstream?.error?.message) return upstream.error.message
+  if (upstream?.message) return upstream.message
+  if (payload?.upstreamRaw) return payload.upstreamRaw
+  return payload?.message || '上游未返回详细错误'
+}
+
+const consumeCodexResetCredit = async (account) => {
+  if (!canConsumeCodexResetCredit(account) || account.isConsumingCodexResetCredit) return
+
+  const credits = formatCodexResetCredits(account)
+  const confirmed = await showConfirm(
+    '主动重置 Codex 限额',
+    `将消耗账号「${account.name || account.email || account.id}」的 1 次主动重置次数（当前剩余 ${credits} 次）。确定继续吗？`,
+    '消耗并重置',
+    '取消'
+  )
+
+  if (!confirmed) return
+
+  accounts.value = accounts.value.map((item) =>
+    item.id === account.id ? { ...item, isConsumingCodexResetCredit: true } : item
+  )
+
+  try {
+    const response = await httpApis.consumeOpenAICodexResetCreditApi(account.id)
+    const result = response?.data || null
+    if (!response?.success) {
+      throw new Error(formatCodexConsumeError(result) || response?.message || '主动重置失败')
+    }
+
+    accounts.value = accounts.value.map((item) =>
+      item.id === account.id
+        ? {
+            ...item,
+            codexUsage: result?.codexUsage || item.codexUsage || null,
+            isConsumingCodexResetCredit: false
+          }
+        : item
+    )
+
+    if (result?.usageRefreshError) {
+      showToast(`已消耗重置次数，但同步最新限额失败: ${result.usageRefreshError}`, 'warning')
+    } else {
+      showToast('已消耗 1 次主动重置次数并同步最新限额', 'success')
+    }
+  } catch (error) {
+    accounts.value = accounts.value.map((item) =>
+      item.id === account.id ? { ...item, isConsumingCodexResetCredit: false } : item
+    )
+    showToast(`主动重置失败: ${error?.message || '未知错误'}`, 'error')
   }
 }
 
