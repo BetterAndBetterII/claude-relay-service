@@ -121,12 +121,17 @@ function extractCodexWindowSnapshot(windowPayload) {
     return null
   }
 
+  const limitWindowSeconds = normalizeNumberValue(
+    windowPayload.limit_window_seconds ?? windowPayload.limitWindowSeconds
+  )
   const snapshot = {
     usedPercent: normalizeNumberValue(windowPayload.used_percent ?? windowPayload.usedPercent),
     resetAfterSeconds: normalizeNumberValue(
       windowPayload.reset_after_seconds ?? windowPayload.resetAfterSeconds
     ),
-    windowMinutes: normalizeNumberValue(windowPayload.window_minutes ?? windowPayload.windowMinutes)
+    windowMinutes:
+      normalizeNumberValue(windowPayload.window_minutes ?? windowPayload.windowMinutes) ??
+      (limitWindowSeconds !== null ? limitWindowSeconds / 60 : null)
   }
 
   return Object.values(snapshot).some((value) => value !== null) ? snapshot : null
@@ -141,8 +146,11 @@ function extractCodexUsageSnapshotFromPayload(payload) {
   const rateLimit = usagePayload.rate_limit || usagePayload.rateLimit || null
   const codeReviewRateLimit =
     usagePayload.code_review_rate_limit || usagePayload.codeReviewRateLimit || null
-  const primary = extractCodexWindowSnapshot(rateLimit)
-  const secondary = extractCodexWindowSnapshot(codeReviewRateLimit)
+  const primaryWindow = rateLimit?.primary_window || rateLimit?.primaryWindow || rateLimit
+  const secondaryWindow =
+    rateLimit?.secondary_window || rateLimit?.secondaryWindow || codeReviewRateLimit
+  const primary = extractCodexWindowSnapshot(primaryWindow)
+  const secondary = extractCodexWindowSnapshot(secondaryWindow)
   const rateLimitResetCreditsAvailableCount =
     extractCodexRateLimitResetCreditsAvailableCount(usagePayload)
 

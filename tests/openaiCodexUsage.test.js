@@ -86,6 +86,38 @@ describe('OpenAI Codex usage helpers', () => {
     })
   })
 
+  it('builds a snapshot from nested wham usage rate-limit windows', () => {
+    const snapshot = openaiAccountService.extractCodexUsageSnapshotFromPayload({
+      rate_limit: {
+        allowed: false,
+        limit_reached: true,
+        primary_window: {
+          used_percent: 0,
+          limit_window_seconds: 18000,
+          reset_after_seconds: 18000
+        },
+        secondary_window: {
+          used_percent: 100,
+          limit_window_seconds: 604800,
+          reset_after_seconds: 108265
+        }
+      },
+      rate_limit_reset_credits: {
+        available_count: 0
+      }
+    })
+
+    expect(snapshot).toEqual({
+      rateLimitResetCreditsAvailableCount: 0,
+      primaryUsedPercent: 0,
+      primaryResetAfterSeconds: 18000,
+      primaryWindowMinutes: 300,
+      secondaryUsedPercent: 100,
+      secondaryResetAfterSeconds: 108265,
+      secondaryWindowMinutes: 10080
+    })
+  })
+
   it('stores zero reset credits as a valid Codex usage snapshot value', async () => {
     await openaiAccountService.updateCodexUsageSnapshot('account-1', {
       rateLimitResetCreditsAvailableCount: 0
